@@ -10,7 +10,7 @@ from app import scanner
 class ScannerSafetyTests(unittest.TestCase):
     def test_exact_product_only_never_publisher_prefix_or_documents(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
+            root = Path(td).resolve()
             local, roaming, home = root/'Local', root/'Roaming', root/'User'
             for p in (local/'ExampleApp', local/'ExampleAppBackup', local/'SharedVendor',
                       roaming/'ExampleApp', home/'Documents'/'ExampleApp'):
