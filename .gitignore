@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+installer/
+release_assets/
+_itmp/
+_itarget/
+*.log
+*.tmp
+_scan*.txt
+prepare_scanner.py
+# Development-only scripts target a real workstation. Never publish/run as tests.
+tests/dryrun_wechat.py
+tests/uninstall_wechat.py
+tests/clean_wechat_leftover.py
+tests/test_engine.py
+tests/test_ui_resources.py
