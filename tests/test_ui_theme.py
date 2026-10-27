@@ -84,19 +84,6 @@ class ChromeTests(unittest.TestCase):
         self.assertEqual(checked, ["store"])
         seg.deleteLater()
 
-    def test_traffic_lights_emit_actions(self):
-        from app.chrome import TrafficLights
-        lights = TrafficLights()
-        fired = []
-        lights.close_clicked.connect(lambda: fired.append("close"))
-        lights.min_clicked.connect(lambda: fired.append("min"))
-        lights.max_clicked.connect(lambda: fired.append("max"))
-        buttons = [b for b in lights.children() if b.__class__.__name__ == "QPushButton"]
-        self.assertEqual(len(buttons), 3)
-        for b in buttons:
-            b.click()
-        self.assertEqual(fired, ["close", "min", "max"])
-        lights.deleteLater()
 
     def test_card_marks_last_row_without_border(self):
         from app.chrome import Card

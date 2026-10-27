@@ -6,6 +6,7 @@ block_cipher = None
 
 datas = [
     ("app/assets/jijian.ico", "assets"),
+    ("app/assets/jijian-1.3.ico", "assets"),
     ("app/assets/jijian_128.png", "assets"),
     ("app/assets/jijian_512.png", "assets"),
     ("LICENSE", "."),

@@ -1,22 +1,21 @@
-"""Apple-style list row for the application sidebar.
+"""ChatGPT-desktop-style list row for the application rail.
 
-Rows are plain list rows (not cards): icon, name, secondary line and a right
-aligned size, with a rounded selection fill and a hairline separator, matching
-macOS System Settings / App Store list rhythm.
+Plain rows (not cards): icon, title, secondary line and a right-aligned size,
+with a rounded hover/selection fill. Selected rows invert to the accent colour
+like ChatGPT's conversation list.
 """
 from __future__ import annotations
 
 from PyQt5.QtCore import QRectF, QSize, Qt
-from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPainterPath,
-                         QPen)
+from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from . import theme
 from .icons import app_pixmap
 from .scanner import AppEntry, human_size
 
-ROW_H = 52
-ICON = 34
+ROW_H = 50
+ICON = 30
 
 
 class AppDelegate(QStyledItemDelegate):
@@ -32,40 +31,34 @@ class AppDelegate(QStyledItemDelegate):
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        r = QRectF(option.rect).adjusted(2, 1, -2, -1)
+        r = QRectF(option.rect).adjusted(6, 1, -6, -1)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
 
-        if selected:
+        if selected or hovered:
             path = QPainterPath()
-            path.addRoundedRect(r.adjusted(2, 1, -2, -1), 7, 7)
-            painter.fillPath(path, QColor(c["accent"]))
-        elif hovered:
-            path = QPainterPath()
-            path.addRoundedRect(r.adjusted(2, 1, -2, -1), 7, 7)
+            path.addRoundedRect(r, 9, 9)
             painter.fillPath(path, QColor(c["row_hover"]))
 
-        ix = r.left() + 10
+        ix = r.left() + 8
         iy = r.top() + (r.height() - ICON) / 2
-        pm = app_pixmap(entry, ICON)
-        painter.drawPixmap(int(ix), int(iy), ICON, ICON, pm)
+        painter.drawPixmap(int(ix), int(iy), ICON, ICON, app_pixmap(entry, ICON))
 
-        tx = ix + ICON + 11
-        right_reserved = 82
-        avail = max(60, int(r.right() - right_reserved - tx))
+        tx = ix + ICON + 10
+        avail = max(60, int(r.right() - 8 - tx))
 
         name_font = QFont(painter.font())
-        name_font.setPointSizeF(9.9)
-        name_font.setWeight(QFont.DemiBold)
+        name_font.setPointSizeF(9.6)
+        name_font.setWeight(QFont.Medium)
         painter.setFont(name_font)
         fm = QFontMetrics(name_font)
         name = fm.elidedText(entry.name or "未知应用", Qt.ElideRight, avail)
-        painter.setPen(QColor(c["on_accent"] if selected else c["text"]))
-        painter.drawText(QRectF(tx, r.top() + 8, avail, 18),
+        painter.setPen(QColor(c["text"]))
+        painter.drawText(QRectF(tx, r.top() + 7, avail, 17),
                          int(Qt.AlignLeft | Qt.AlignVCenter), name)
 
         sub_font = QFont(painter.font())
-        sub_font.setPointSizeF(8.3)
+        sub_font.setPointSizeF(8.2)
         sub_font.setWeight(QFont.Normal)
         painter.setFont(sub_font)
         fm2 = QFontMetrics(sub_font)
@@ -76,27 +69,19 @@ class AppDelegate(QStyledItemDelegate):
             bits.append(entry.publisher)
         if not bits:
             bits.append(_engine_label(entry))
-        sub = fm2.elidedText(" · ".join(bits), Qt.ElideRight, avail)
-        painter.setPen(QColor(255, 255, 255, 200) if selected else QColor(c["text2"]))
-        painter.drawText(QRectF(tx, r.top() + 27, avail, 15),
-                         int(Qt.AlignLeft | Qt.AlignVCenter), sub)
-
         tag = _badge_text(entry)
         if tag:
-            little = QFont(painter.font())
-            little.setPointSizeF(8.2)
-            painter.setFont(little)
-            fml = QFontMetrics(little)
-            w = fml.horizontalAdvance(tag)
-            painter.setPen(QColor(255, 255, 255, 220) if selected else QColor(c["text3"]))
-            painter.drawText(QRectF(r.right() - 12 - w, r.top() + 17, w, 16),
-                             int(Qt.AlignRight | Qt.AlignVCenter), tag)
+            bits.append(tag)
+        sub = fm2.elidedText(" · ".join(bits), Qt.ElideRight, avail)
+        painter.setPen(QColor(c["text3"]))
+        painter.drawText(QRectF(tx, r.top() + 25, avail, 15),
+                         int(Qt.AlignLeft | Qt.AlignVCenter), sub)
 
-        # hairline separator, inset past the icon like macOS lists
-        if not selected:
+        # hairline between rows, inset past the icon (ChatGPT's rail rhythm)
+        if not selected and not hovered:
             painter.setPen(QPen(QColor(c["sep"]), 1))
-            y = r.bottom()
-            painter.drawLine(int(tx), int(y), int(r.right() - 10), int(y))
+            y = r.bottom() + 1
+            painter.drawLine(int(tx), int(y), int(r.right() - 6), int(y))
         painter.restore()
 
 

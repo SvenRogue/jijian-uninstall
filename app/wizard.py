@@ -9,15 +9,13 @@ import json
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (QApplication, QComboBox, QDialog, QFileDialog,
-                             QGraphicsDropShadowEffect, QHBoxLayout, QHeaderView,
+                             QHBoxLayout, QHeaderView,
                              QLabel, QMessageBox, QPlainTextEdit, QProgressBar,
                              QPushButton, QStackedWidget, QTreeWidget,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import leftovers, scanner, theme
-from .chrome import TrafficLights
 from .workflow import UninstallWorkflow
 
 
@@ -55,31 +53,8 @@ def _repolish(widget) -> None:
     widget.update()
 
 
-class _TitleBar(QWidget):
-    """Draggable macOS-style title bar for a frameless dialog."""
-
-    def __init__(self, host, parent=None):
-        super().__init__(parent)
-        self._host = host
-        self.setObjectName("TitleBar")
-        self.setFixedHeight(46)
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self._host._drag_pos = event.globalPos() - self._host.frameGeometry().topLeft()
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        self._host._drag_move(event)
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        self._host._drag_pos = None
-        super().mouseReleaseEvent(event)
-
-
 class ShellDialog(QDialog):
-    """Frameless rounded dialog with traffic lights, shared by both dialogs."""
+    """Themed dialog with native window controls, shared by both dialogs."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -90,8 +65,9 @@ class ShellDialog(QDialog):
     def _init_shell(self, caption: str, minimum, default) -> QVBoxLayout:
         self.setObjectName("DialogRoot")
         self.setWindowTitle(caption)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setWindowFlags(Qt.Window | Qt.WindowTitleHint | Qt.WindowSystemMenuHint |
+                            Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint |
+                            Qt.WindowCloseButtonHint)
         self.setMinimumSize(*minimum)
         self.resize(*default)
 
@@ -101,40 +77,13 @@ class ShellDialog(QDialog):
         self.shell.setObjectName("DialogShell")
         outer.addWidget(self.shell)
 
-        shadow = QGraphicsDropShadowEffect(self.shell)
-        shadow.setBlurRadius(42)
-        shadow.setOffset(0, 10)
-        shadow.setColor(QColor(0, 0, 0, 90))
-        self.shell.setGraphicsEffect(shadow)
-
         root = QVBoxLayout(self.shell)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        bar = _TitleBar(self)
-        line = QHBoxLayout(bar)
-        line.setContentsMargins(16, 14, 16, 0)
-        line.setSpacing(8)
-        lights = TrafficLights()
-        lights.setFixedWidth(66)
-        lights.close_clicked.connect(self.reject)
-        lights.min_clicked.connect(self.showMinimized)
-        lights.max_clicked.connect(self._toggle_max)
-        line.addWidget(lights)
-        line.addStretch(1)
-        self._caption = QLabel(caption)
-        self._caption.setProperty("role", "title")
-        self._caption.setAlignment(Qt.AlignCenter)
-        line.addWidget(self._caption)
-        line.addStretch(1)
-        spacer = QWidget()
-        spacer.setFixedWidth(66)
-        line.addWidget(spacer)
-        root.addWidget(bar)
-
         body = QWidget()
         self._body = QVBoxLayout(body)
-        self._body.setContentsMargins(26, 6, 26, 20)
+        self._body.setContentsMargins(26, 20, 26, 20)
         self._body.setSpacing(14)
         root.addWidget(body, 1)
         return self._body
@@ -152,11 +101,8 @@ class ShellDialog(QDialog):
         self.move(event.globalPos() - self._drag_pos)
 
     # ------------------------------------------------------------- theme
-    # Small additions on top of theme.dialog_qss(): the frameless root must not
-    # paint an opaque rectangle behind the rounded shell, and Qt's default header
-    # palette otherwise paints a light band in dark mode.
+    # Keep Qt's default header palette from painting a light band in dark mode.
     _EXTRA_QSS = """
-QDialog#DialogRoot { background: transparent; }
 QHeaderView { background: transparent; }
 QHeaderView::section { background: transparent; }
 QTreeWidget::branch { background: transparent; }

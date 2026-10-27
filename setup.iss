@@ -3,7 +3,7 @@
 
 #define MyAppName "极简卸载"
 #define MyAppNameEn "JiJian Uninstall"
-#define MyAppVersion "1.2.0-preview.1"
+#define MyAppVersion "1.3.0-preview.1"
 #define MyAppPublisher "SvenRogue"
 #define MyAppExeName "极简卸载.exe"
 
@@ -13,7 +13,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 LicenseFile=LICENSE
-VersionInfoVersion=1.2.0.1
+VersionInfoVersion=1.3.0.1
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -40,9 +40,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "�
 Source: "dist\极简卸载\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "应用卸载与残留审阅"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\assets\jijian-1.3.ico"; Comment: "应用卸载与残留审阅"
 Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "应用卸载与残留审阅"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\_internal\assets\jijian-1.3.ico"; Comment: "应用卸载与残留审阅"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Flags: nowait postinstall skipifsilent

@@ -1,56 +1,39 @@
-"""Apple-style sidebar and window chrome widgets."""
+"""ChatGPT-desktop-style sidebar widgets.
+
+The window chrome is Windows-native (real title bar, system min/max/close), so
+this module only provides the in-canvas building blocks: section labels, a
+search field with a leading glyph, an exclusive segmented control, cards and a
+small activity ring.
+"""
 from __future__ import annotations
 
-from PyQt5.QtCore import QRectF, QSize, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
-from PyQt5.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSizePolicy,
-                             QVBoxLayout, QWidget)
+from pathlib import Path
+import sys
+
+from PyQt5.QtCore import QRectF, Qt, QTimer, pyqtSignal
+from PyQt5.QtGui import QColor, QPainter, QPen, QPixmap
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from . import theme
 
 
-class TrafficLights(QWidget):
-    """Three macOS-style window buttons. Emits actions instead of drawing menus."""
-
-    close_clicked = pyqtSignal()
-    min_clicked = pyqtSignal()
-    max_clicked = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-        for key, glyph, signal in (("close", "✕", self.close_clicked),
-                                   ("min", "—", self.min_clicked),
-                                   ("max", "＋", self.max_clicked)):
-            b = QPushButton(glyph)
-            b.setObjectName("Traffic")
-            b.setProperty("light", key)
-            b.setCursor(Qt.ArrowCursor)
-            b.setFocusPolicy(Qt.NoFocus)
-            b.setToolTip({"close": "关闭", "min": "最小化", "max": "缩放"}[key])
-            b.clicked.connect(signal.emit)
-            lay.addWidget(b)
-        lay.addStretch(1)
-
-
 class LogoWidget(QWidget):
+    """App icon, resolved for both source runs and a frozen build."""
+
     def __init__(self, size=22, parent=None):
         super().__init__(parent)
-        from pathlib import Path
-        import sys
         base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
-        pix = None
-        for cand in (base / "app" / "assets" / "jijian_128.png", base / "assets" / "jijian_128.png",
+        pix = QPixmap()
+        for cand in (base / "app" / "assets" / "jijian_128.png",
+                     base / "assets" / "jijian_128.png",
                      Path(__file__).resolve().parent / "assets" / "jijian_128.png"):
             if cand.exists():
                 pix = QPixmap(str(cand))
                 break
-        self._pix = pix if pix is not None else QPixmap()
+        self._pix = pix
         self.setFixedSize(size, size)
 
-    def paintEvent(self, e):
+    def paintEvent(self, event):
         if self._pix.isNull():
             return
         p = QPainter(self)
@@ -61,13 +44,12 @@ class LogoWidget(QWidget):
 
 
 class Spinner(QWidget):
-    """Thin macOS-style activity ring."""
+    """Thin activity ring shown next to the status text while working."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._angle = 0
-        self.setFixedSize(14, 14)
-        from PyQt5.QtCore import QTimer
+        self.setFixedSize(13, 13)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
 
@@ -83,8 +65,7 @@ class Spinner(QWidget):
         self._timer.stop()
         self.hide()
 
-    def paintEvent(self, e):
-        from PyQt5.QtGui import QPen
+    def paintEvent(self, event):
         c = theme.palette()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -92,13 +73,13 @@ class Spinner(QWidget):
         p.setPen(QPen(QColor(c["track"]), 2))
         p.setBrush(Qt.NoBrush)
         p.drawEllipse(r)
-        p.setPen(QPen(QColor(c["accent"]), 2, Qt.SolidLine, Qt.RoundCap))
+        p.setPen(QPen(QColor(c["text2"]), 2, Qt.SolidLine, Qt.RoundCap))
         p.drawArc(r, int(-self._angle * 16), int(110 * 16))
         p.end()
 
 
 class SegmentedControl(QWidget):
-    """macOS segmented control: one selected segment, exclusive."""
+    """Exclusive segmented control (macOS/ChatGPT style), emits the new key."""
 
     changed = pyqtSignal(str)
 
@@ -138,12 +119,6 @@ class SegmentedControl(QWidget):
             b.setEnabled(enabled)
 
 
-class SidebarSection(QLabel):
-    def __init__(self, text, parent=None):
-        super().__init__(text, parent)
-        self.setProperty("role", "section")
-
-
 class SearchField(QWidget):
     """QLineEdit with a leading magnifier drawn inside the field."""
 
@@ -151,7 +126,6 @@ class SearchField(QWidget):
 
     def __init__(self, placeholder="搜索", parent=None):
         super().__init__(parent)
-        from PyQt5.QtWidgets import QLineEdit
         self.edit = QLineEdit()
         self.edit.setObjectName("Search")
         self.edit.setPlaceholderText(placeholder)
@@ -177,21 +151,20 @@ class SearchField(QWidget):
         pen.setColor(QColor(c["text3"]))
         pen.setWidthF(1.4)
         p.setPen(pen)
-        x, y = 11.0, 12.0
-        p.drawEllipse(QRectF(x, y - 4.2, 7.4, 7.4))
-        p.drawLine(int(x + 6.6), int(y + 2.4), int(x + 9.6), int(y + 5.6))
+        x, y = 11.0, 12.5
+        p.drawEllipse(QRectF(x, y - 4.0, 7.2, 7.2))
+        p.drawLine(int(x + 6.4), int(y + 2.6), int(x + 9.4), int(y + 5.6))
         p.end()
 
 
 class Card(QWidget):
-    """Grouped card container: optional title, rows added by the caller."""
+    """Grouped card: optional section label above a rounded container."""
 
     def __init__(self, title: str = "", parent=None):
         super().__init__(parent)
-        from PyQt5.QtWidgets import QFrame
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(5)
+        outer.setSpacing(6)
         if title:
             lab = QLabel(title)
             lab.setProperty("role", "section")
@@ -204,13 +177,12 @@ class Card(QWidget):
         outer.addWidget(self.frame)
 
     def add(self, widget: QWidget, last: bool = False):
-        from PyQt5.QtWidgets import QFrame
         row = QFrame()
         row.setObjectName("CardRow")
         row.setProperty("last", "true" if last else "false")
         lay = QHBoxLayout(row)
-        lay.setContentsMargins(13, 10, 13, 10)
-        lay.setSpacing(11)
+        lay.setContentsMargins(12, 9, 12, 9)
+        lay.setSpacing(10)
         lay.addWidget(widget)
         self.body.addWidget(row)
         return row

@@ -1,6 +1,6 @@
-"""主窗口：Apple 系统设置风格 —— 侧边栏应用列表 + 右侧分组卡片。
+"""主窗口：ChatGPT 桌面端风格 —— 左侧应用栏 + 右侧内容画布。
 
-视觉规则：单一系统蓝强调色、发丝分隔线、分组圆角卡片、克制的字重层级。
+窗口边框使用 Windows 原生标题栏（系统最小化/最大化/关闭），内容区自绘。
 功能与安全语义不变：主界面清点只作参考，真正清理在卸载向导内逐项确认。
 """
 from __future__ import annotations
@@ -11,19 +11,57 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt5.QtCore import (QSettings, QSize, Qt, QThread, QTimer, pyqtSignal)
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
-from PyQt5.QtWidgets import (QApplication, QCheckBox, QFrame, QGraphicsDropShadowEffect,
-                             QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                             QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-                             QScrollArea, QSizeGrip, QVBoxLayout, QWidget)
+from PyQt5.QtCore import QSettings, QSize, Qt, QThread, QTimer, pyqtSignal
+from PyQt5.QtGui import QIcon
+from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QCheckBox, QFrame,
+                             QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                             QMenu, QMessageBox, QPlainTextEdit, QProgressBar,
+                             QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from . import chrome, engine as eng, scanner, theme
-from .chrome import (Card, LogoWidget, SearchField, SegmentedControl, Spinner,
-                     TrafficLights)
+from .chrome import Card, LogoWidget, SearchField, SegmentedControl, Spinner
 from .delegate import AppDelegate
 from .icons import app_pixmap
 from .scanner import AppEntry, human_size
+
+
+# ------------------------------------------------------------------ sorting
+# key -> (menu label, comparator)
+SORTS = {
+    "name": ("名称（A → Z）",
+             lambda a: ((a.name or "").casefold(), (a.publisher or "").casefold())),
+    "name_desc": ("名称（Z → A）",
+                  lambda a: ((a.name or "").casefold(), (a.publisher or "").casefold())),
+    "size": ("体积（大 → 小）", lambda a: -_size_of(a)),
+    "size_asc": ("体积（小 → 大）", lambda a: _size_of(a)),
+    "publisher": ("发布者",
+                  lambda a: ((a.publisher or "").casefold(), (a.name or "").casefold())),
+    "date": ("安装日期（新 → 旧）", lambda a: _neg_date(a.install_date)),
+    "type": ("安装方式", lambda a: (a.uninstall_type, (a.name or "").casefold())),
+}
+SORT_DEFAULT = "name"
+
+
+def _size_of(a: AppEntry) -> int:
+    """Use installed size consistently; unknown sizes sort last."""
+    return max(0, a.size or 0) * 1024
+
+
+def _neg_date(value: str):
+    """Sort newest first without parsing: reverse lexicographic on YYYYMMDD."""
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    return tuple(-int(digits[i:i + 2] or 0) for i in range(0, min(8, len(digits)), 2)) \
+        if digits else (1,)
+
+
+def sort_apps(apps: list[AppEntry], key: str) -> list[AppEntry]:
+    # Stable name tie-break, with missing sizes/dates at the end in both directions.
+    by_name = sorted(apps, key=SORTS['name'][1])
+    if key in ('size', 'size_asc'):
+        return sorted(by_name, key=lambda a: (_size_of(a) == 0,
+                       -_size_of(a) if key == 'size' else _size_of(a)))
+    comparator = SORTS.get(key, SORTS[SORT_DEFAULT])[1]
+    return sorted(by_name, key=comparator, reverse=(key == 'name_desc'))
 
 
 # ------------------------------------------------------------------ helpers
@@ -35,15 +73,6 @@ def asset(name: str) -> str:
         if cand.exists():
             return str(cand)
     return str(base / "app" / "assets" / name)
-
-
-def _shadow(w, blur=30, dy=8, alpha=70):
-    eff = QGraphicsDropShadowEffect(w)
-    eff.setBlurRadius(blur)
-    eff.setOffset(0, dy)
-    eff.setColor(QColor(0, 0, 0, alpha))
-    w.setGraphicsEffect(eff)
-    return eff
 
 
 # ------------------------------------------------------------------ workers
@@ -80,12 +109,9 @@ class MainWindow(QWidget):
         super().__init__()
         self.setWindowTitle("极简卸载")
         self.setWindowIcon(QIcon(asset("jijian.ico")))
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Window)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMinimumSize(980, 640)
+        self.setMinimumSize(940, 620)
         self.resize(1120, 740)
 
-        self._drag_pos = None
         self.apps: list[AppEntry] = []
         self.current: AppEntry | None = None
         self._scan_worker = None
@@ -97,6 +123,9 @@ class MainWindow(QWidget):
         self._inventory_ready = set()
         self._inventory_epoch = 0
         self._settings = QSettings("SvenRogue", "JiJianUninstall")
+        self._sort = self._settings.value("sort", SORT_DEFAULT, type=str)
+        if self._sort not in SORTS:
+            self._sort = SORT_DEFAULT
 
         theme.set_mode(self._settings.value("appearance", "light", type=str))
         self._build_ui()
@@ -104,41 +133,24 @@ class MainWindow(QWidget):
 
     # ---------------------------------------------------------------- shell
     def _build_ui(self):
-        outer = QVBoxLayout(self)
+        outer = QHBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self.shell = QWidget()
-        self.shell.setObjectName("Shell")
-        outer.addWidget(self.shell)
-        _shadow(self.shell, blur=44, dy=10, alpha=90)
-
-        row = QHBoxLayout(self.shell)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(0)
-        row.addWidget(self._build_sidebar())
-        row.addWidget(self._build_content(), 1)
+        outer.setSpacing(0)
+        outer.addWidget(self._build_sidebar())
+        outer.addWidget(self._build_content(), 1)
 
     def _build_sidebar(self) -> QWidget:
         side = QWidget()
         side.setObjectName("Sidebar")
-        side.setFixedWidth(318)
+        side.setFixedWidth(300)
         lay = QVBoxLayout(side)
-        lay.setContentsMargins(16, 14, 14, 12)
-        lay.setSpacing(10)
-
-        top = QHBoxLayout()
-        top.setContentsMargins(2, 0, 0, 0)
-        lights = TrafficLights()
-        lights.close_clicked.connect(self.close)
-        lights.min_clicked.connect(self.showMinimized)
-        lights.max_clicked.connect(self._toggle_max)
-        top.addWidget(lights)
-        top.addStretch(1)
-        lay.addLayout(top)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(9)
 
         brand = QHBoxLayout()
-        brand.setContentsMargins(2, 6, 0, 2)
+        brand.setContentsMargins(4, 2, 4, 2)
         brand.setSpacing(9)
-        brand.addWidget(LogoWidget(26))
+        brand.addWidget(LogoWidget(24))
         col = QVBoxLayout()
         col.setSpacing(0)
         t = QLabel("极简卸载")
@@ -154,19 +166,26 @@ class MainWindow(QWidget):
         self.search.textChanged.connect(self._apply_filter)
         lay.addWidget(self.search)
 
+        controls = QHBoxLayout()
+        controls.setSpacing(6)
         self._seg = SegmentedControl((("all", "全部"), ("big", "大体积"),
                                       ("residue", "有残留"), ("store", "商店")))
         self._seg.changed.connect(self._set_filter)
         self.pills = self._seg._buttons
-        lay.addWidget(self._seg)
+        controls.addWidget(self._seg, 1)
 
-        head = QHBoxLayout()
-        head.setContentsMargins(3, 4, 3, 0)
+        self.btn_sort = QPushButton("排序 ▾")
+        self.btn_sort.setObjectName("Pill")
+        self.btn_sort.setCursor(Qt.PointingHandCursor)
+        self.btn_sort.setToolTip("选择应用列表的排序方式")
+        self.btn_sort.clicked.connect(self._show_sort_menu)
+        controls.addWidget(self.btn_sort, 0)
+        lay.addLayout(controls)
+
         self.lbl_count = QLabel("正在扫描…")
         self.lbl_count.setProperty("role", "faint")
-        head.addWidget(self.lbl_count)
-        head.addStretch(1)
-        lay.addLayout(head)
+        self.lbl_count.setContentsMargins(4, 2, 0, 0)
+        lay.addWidget(self.lbl_count)
 
         self.list = QListWidget()
         self.list.setObjectName("AppList")
@@ -190,8 +209,8 @@ class MainWindow(QWidget):
     def _sidebar_footer(self) -> QWidget:
         wrap = QWidget()
         lay = QVBoxLayout(wrap)
-        lay.setContentsMargins(0, 6, 0, 0)
-        lay.setSpacing(2)
+        lay.setContentsMargins(0, 4, 0, 0)
+        lay.setSpacing(1)
 
         self.btn_recovery = QPushButton("恢复中心")
         self.btn_recovery.setObjectName("SidebarItem")
@@ -208,12 +227,12 @@ class MainWindow(QWidget):
         line = QFrame()
         line.setObjectName("Divider")
         line.setFixedHeight(1)
-        lay.addSpacing(5)
+        lay.addSpacing(6)
         lay.addWidget(line)
-        lay.addSpacing(5)
+        lay.addSpacing(6)
 
         appr = QHBoxLayout()
-        appr.setContentsMargins(2, 0, 0, 0)
+        appr.setContentsMargins(4, 0, 0, 0)
         appr.setSpacing(8)
         label = QLabel("外观")
         label.setProperty("role", "faint")
@@ -238,13 +257,11 @@ class MainWindow(QWidget):
         content = QWidget()
         content.setObjectName("Content")
         lay = QVBoxLayout(content)
-        lay.setContentsMargins(26, 18, 26, 12)
+        lay.setContentsMargins(28, 20, 28, 14)
         lay.setSpacing(14)
-
         lay.addWidget(self._build_detail(), 1)
-
         log_card = self._build_log()
-        log_card.setMaximumHeight(230)
+        log_card.setMaximumHeight(232)
         lay.addWidget(log_card)
         lay.addWidget(self._build_statusbar())
         return content
@@ -253,19 +270,18 @@ class MainWindow(QWidget):
         wrap = QWidget()
         lay = QVBoxLayout(wrap)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(13)
+        lay.setSpacing(12)
 
         head = QHBoxLayout()
         head.setSpacing(14)
         self.d_icon = QLabel()
-        self.d_icon.setFixedSize(52, 52)
+        self.d_icon.setFixedSize(48, 48)
         head.addWidget(self.d_icon, 0, Qt.AlignTop)
 
         col = QVBoxLayout()
         col.setSpacing(2)
         self.d_name = QLabel("选择一个应用")
         self.d_name.setProperty("role", "h1")
-        self.d_name.setWordWrap(False)
         col.addWidget(self.d_name)
         self.d_meta = QLabel("从左侧选择要卸载的应用")
         self.d_meta.setProperty("role", "meta")
@@ -295,8 +311,7 @@ class MainWindow(QWidget):
         self.lo_area = QScrollArea()
         self.lo_area.setWidgetResizable(True)
         self.lo_area.setFrameShape(QFrame.NoFrame)
-        self.lo_area.setStyleSheet("QScrollArea{background:transparent;border:none;}")
-        self.lo_area.setMinimumHeight(150)
+        self.lo_area.setMinimumHeight(140)
         self.lo_host = QWidget()
         self.lo_host.setObjectName("ScrollBody")
         self.lo_lay = QVBoxLayout(self.lo_host)
@@ -320,7 +335,7 @@ class MainWindow(QWidget):
         card = Card("执行日志")
         wrap = QWidget()
         lay = QVBoxLayout(wrap)
-        lay.setContentsMargins(10, 9, 10, 10)
+        lay.setContentsMargins(11, 9, 11, 10)
         lay.setSpacing(7)
 
         hdr = QHBoxLayout()
@@ -345,7 +360,7 @@ class MainWindow(QWidget):
         self.progress.setTextVisible(False)
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        self.progress.setFixedHeight(4)
+        self.progress.setFixedHeight(3)
         lay.addWidget(self.progress)
 
         card.body.addWidget(wrap)
@@ -353,49 +368,41 @@ class MainWindow(QWidget):
 
     def _build_statusbar(self) -> QWidget:
         bar = QWidget()
-        bar.setFixedHeight(30)
+        bar.setFixedHeight(24)
         lay = QHBoxLayout(bar)
         lay.setContentsMargins(2, 0, 0, 0)
-        lay.setSpacing(8)
         self.lbl_foot = QLabel("")
         self.lbl_foot.setProperty("role", "faint")
         lay.addWidget(self.lbl_foot)
         lay.addStretch(1)
-        grip = QSizeGrip(bar)
-        lay.addWidget(grip, 0, Qt.AlignBottom)
         return bar
 
-    # ------------------------------------------------------- window drag
-    def _tb_press(self, e):
-        if e.button() == Qt.LeftButton:
-            self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
+    # ------------------------------------------------------------ sorting
+    def _show_sort_menu(self):
+        menu = QMenu(self)
+        group = QActionGroup(menu)
+        group.setExclusive(True)
+        for key, (label, _) in SORTS.items():
+            action = QAction(label, menu)
+            action.setCheckable(True)
+            action.setChecked(key == self._sort)
+            action.triggered.connect(lambda _=False, k=key: self.set_sort(k))
+            group.addAction(action)
+            menu.addAction(action)
+        menu.exec_(self.btn_sort.mapToGlobal(self.btn_sort.rect().bottomLeft()))
 
-    def _tb_move(self, e):
-        if self._drag_pos and e.buttons() & Qt.LeftButton:
-            if self.isMaximized():
-                self.showNormal()
-                self._drag_pos = e.globalPos() - self.frameGeometry().topLeft()
-            self.move(e.globalPos() - self._drag_pos)
+    def set_sort(self, key: str):
+        if key not in SORTS:
+            return
+        self._sort = key
+        self._settings.setValue("sort", key)
+        self.btn_sort.setText("排序 ▾")
+        self.btn_sort.setToolTip(f"当前排序：{SORTS[key][0]}（体积依据安装登记，未知值排在最后）")
+        self._populate()
 
-    def _tb_release(self, e):
-        self._drag_pos = None
-
+    # ------------------------------------------------------- window state
     def _toggle_max(self):
         self.showNormal() if self.isMaximized() else self.showMaximized()
-
-    def mousePressEvent(self, e):
-        # the sidebar/title area is draggable like a native window
-        if e.button() == Qt.LeftButton and e.pos().y() < 56 and e.pos().x() < 318:
-            self._tb_press(e)
-        super().mousePressEvent(e)
-
-    def mouseMoveEvent(self, e):
-        self._tb_move(e)
-        super().mouseMoveEvent(e)
-
-    def mouseReleaseEvent(self, e):
-        self._tb_release(e)
-        super().mouseReleaseEvent(e)
 
     # ------------------------------------------------------------ appearance
     def _set_appearance(self, mode: str):
@@ -458,21 +465,25 @@ class MainWindow(QWidget):
             f"{'管理员权限' if eng.Uninstaller.is_admin() else '普通权限，受保护目录将跳过'}")
 
     def _populate(self):
+        selected_uid = self.current.uid if self.current else None
+        self.list.blockSignals(True)
         self.list.clear()
         q = self.search.text().strip().lower()
         shown = 0
-        for a in self.apps:
-            if not self._match(a, q):
-                continue
+        selected_row = -1
+        for a in sort_apps([x for x in self.apps if self._match(x, q)], self._sort):
             it = QListWidgetItem()
             it.setData(Qt.UserRole, a)
-            it.setSizeHint(QSize(280, 52))
+            it.setSizeHint(QSize(268, 50))
             self.list.addItem(it)
+            if selected_uid and a.uid == selected_uid:
+                selected_row = shown
             shown += 1
-        self.lbl_count.setText(f"{shown} 个应用")
+        self.list.blockSignals(False)
+        self.lbl_count.setText(f"{shown} 个应用 · 按{SORTS[self._sort][0]}")
         self.empty_hint.setVisible(shown == 0)
         if shown:
-            self.list.setCurrentRow(0)
+            self.list.setCurrentRow(selected_row if selected_row >= 0 else 0)
         else:
             self._clear_detail()
 
@@ -534,7 +545,7 @@ class MainWindow(QWidget):
         self.btn_dry.setEnabled(False)
 
     def _render_detail(self, e: AppEntry):
-        self.d_icon.setPixmap(app_pixmap(e, 52))
+        self.d_icon.setPixmap(app_pixmap(e, 48))
         self.d_name.setText(e.name)
         meta = []
         if e.version:
@@ -565,9 +576,13 @@ class MainWindow(QWidget):
             e = self.current
         self._inventory_ready.add(e.uid)
         self.current = e
+        # Keep the inventory snapshot when the user changes sorting or filters.
+        for idx, existing in enumerate(self.apps):
+            if existing.uid == e.uid:
+                self.apps[idx] = e
+                break
         self.btn_go.setEnabled(not self._busy)
         self.btn_dry.setEnabled(not self._busy)
-        # replace stored entry so badge updates
         for i in range(self.list.count()):
             it = self.list.item(i)
             if it.data(Qt.UserRole).uid == e.uid:
@@ -577,8 +592,8 @@ class MainWindow(QWidget):
         real = [i for i in e.leftovers if i.exists]
         total = sum(i.size for i in real)
         if not real:
-            self.d_sum.setText("没有发现可清理的残留，卸载程序会完整处理")
-            self.lo_lay.insertWidget(0, _hint_label("官方卸载程序将自行清理，不额外删除文件"))
+            self.d_sum.setText("当前未发现候选位置；卸载后将重新扫描")
+            self.lo_lay.insertWidget(0, _hint_label("扫描范围有限，不能保证没有其他残留"))
             return
         self.d_sum.setText(f"发现 {len(real)} 处残留 · 约 {human_size(total)} · 卸载后重新扫描确认")
         for i, item in enumerate(real):
@@ -591,9 +606,6 @@ class MainWindow(QWidget):
         lay = QHBoxLayout(row)
         lay.setContentsMargins(12, 8, 12, 8)
         lay.setSpacing(10)
-        dot = QLabel("•")
-        dot.setStyleSheet("color:#8E8E93;font-size:12px;")
-        lay.addWidget(dot, 0, Qt.AlignVCenter)
         kind = {"dir": "目录", "appxdata": "应用数据", "key": "注册表",
                 "file": "文件", "service": "服务"}.get(item.kind, item.kind)
         name = QLabel(item.label if item.kind != "key" else item.path.split("\\")[-1])
@@ -662,7 +674,7 @@ class MainWindow(QWidget):
         self._busy = busy
         if status:
             self.lbl_status.setText(status)
-        for w in (self.btn_go, self.btn_dry):
+        for w in (self.btn_go, self.btn_dry, self.btn_sort):
             w.setEnabled(not busy)
         ready = bool(self.current and self.current.uid in self._inventory_ready)
         self.btn_go.setEnabled(not busy and ready)
@@ -672,8 +684,6 @@ class MainWindow(QWidget):
         for w in self.pills.values():
             w.setEnabled(not busy)
         self.spinner.start() if busy else self.spinner.stop()
-        if not busy:
-            self.lbl_status.setStyleSheet("")
 
     def log_line(self, msg: str):
         self.log.appendPlainText(msg)

@@ -72,9 +72,9 @@ finally:
 assets=root/'release_assets'
 assets.mkdir(exist_ok=True)
 import shutil
-setup=root/'installer'/'极简卸载-安装程序-1.2.0-preview.1.exe'
-shutil.copyfile(setup,assets/'JiJian-Uninstall-1.2.0-preview.1-Setup.exe')
-portable=assets/'JiJian-Uninstall-1.2.0-preview.1-Portable.zip'
+setup=root/'installer'/'极简卸载-安装程序-1.3.0-preview.1.exe'
+shutil.copyfile(setup,assets/'JiJian-Uninstall-1.3.0-preview.1-Setup.exe')
+portable=assets/'JiJian-Uninstall-1.3.0-preview.1-Portable.zip'
 with zipfile.ZipFile(portable,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
     for path in sorted(exe.parent.rglob('*')):
         if path.is_file():
@@ -83,7 +83,7 @@ with zipfile.ZipFile(portable,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
         z.write(root/name,Path('极简卸载')/name)
 checks=[]
 for path in sorted(assets.iterdir()):
-    if path.suffix not in ('.exe','.zip') or '1.2.0-preview.1' not in path.name:
+    if path.suffix not in ('.exe','.zip') or '1.3.0-preview.1' not in path.name:
         continue
     checks.append(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name)
     print('Asset:',path.name,path.stat().st_size)
