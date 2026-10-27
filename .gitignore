@@ -10,6 +10,8 @@ _itarget/
 *.log
 *.tmp
 _scan*.txt
+_shots/
+_fixfonts.py
 prepare_scanner.py
 # Development-only scripts target a real workstation. Never publish/run as tests.
 tests/dryrun_wechat.py

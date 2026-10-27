@@ -2,9 +2,9 @@
 
 <p align="center"><img src="app/assets/jijian_128.png" width="96" alt="极简卸载图标"></p>
 
-Windows 桌面卸载工具。运行厂商卸载程序，随后重新扫描并审阅可能的残留；文件移入恢复区，注册表仅导出备份。
+Windows 桌面卸载工具，Apple 系统设置风格的界面，支持浅色与深色外观。运行厂商卸载程序，随后重新扫描并审阅可能的残留；文件移入恢复区，注册表仅导出备份。
 
-**开发版本：1.1.0-preview.1。** 预览版仍有功能和安全边界，处理重要数据前请先备份。
+**开发版本：1.2.0-preview.1。** 预览版仍有功能和安全边界，处理重要数据前请先备份。
 
 ## 使用
 
@@ -37,7 +37,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe main.py
 $env:QT_QPA_PLATFORM = 'offscreen'
-.\.venv\Scripts\python.exe -m unittest tests.test_release_engine tests.test_release_scanner tests.test_recovery tests.test_session tests.test_workflow tests.test_wizard -v
+.\.venv\Scripts\python.exe -m unittest tests.test_release_engine tests.test_release_scanner tests.test_recovery tests.test_session tests.test_workflow tests.test_wizard tests.test_ui_theme -v
 .\.venv\Scripts\python.exe collect_licenses.py
 .\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean build.spec
 & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" setup.iss

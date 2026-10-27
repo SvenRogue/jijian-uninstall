@@ -1,73 +1,71 @@
-"""应用列表卡片绘制。"""
+"""Apple-style list row for the application sidebar.
+
+Rows are plain list rows (not cards): icon, name, secondary line and a right
+aligned size, with a rounded selection fill and a hairline separator, matching
+macOS System Settings / App Store list rhythm.
+"""
 from __future__ import annotations
 
 from PyQt5.QtCore import QRectF, QSize, Qt
-from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
-                         QPainterPath, QPen)
+from PyQt5.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPainterPath,
+                         QPen)
 from PyQt5.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
+from . import theme
 from .icons import app_pixmap
 from .scanner import AppEntry, human_size
 
-CARD_H = 64
-ICON = 38
+ROW_H = 52
+ICON = 34
 
 
 class AppDelegate(QStyledItemDelegate):
     def sizeHint(self, option, index) -> QSize:
-        return QSize(option.rect.width(), CARD_H + 8)
+        return QSize(option.rect.width(), ROW_H)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
         entry = index.data(Qt.UserRole)
         if entry is None:
             super().paint(painter, option, index)
             return
+        c = theme.palette()
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        r = option.rect.adjusted(2, 4, -2, -4)
-
+        r = QRectF(option.rect).adjusted(2, 1, -2, -1)
         selected = bool(option.state & QStyle.State_Selected)
         hovered = bool(option.state & QStyle.State_MouseOver)
 
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(r), 12, 12)
         if selected:
-            g = QLinearGradient(r.left(), 0, r.right(), 0)
-            g.setColorAt(0, QColor(108, 140, 255, 62))
-            g.setColorAt(1, QColor(108, 140, 255, 20))
-            painter.fillPath(path, g)
-            painter.setPen(QPen(QColor(108, 140, 255, 170), 1))
-            painter.drawPath(path)
+            path = QPainterPath()
+            path.addRoundedRect(r.adjusted(2, 1, -2, -1), 7, 7)
+            painter.fillPath(path, QColor(c["accent"]))
         elif hovered:
-            painter.fillPath(path, QColor(255, 255, 255, 22))
-            painter.setPen(QPen(QColor(255, 255, 255, 36), 1))
-            painter.drawPath(path)
-        else:
-            painter.fillPath(path, QColor(255, 255, 255, 12))
+            path = QPainterPath()
+            path.addRoundedRect(r.adjusted(2, 1, -2, -1), 7, 7)
+            painter.fillPath(path, QColor(c["row_hover"]))
 
-        ix = r.left() + 13
-        iy = r.top() + (r.height() - ICON) // 2
+        ix = r.left() + 10
+        iy = r.top() + (r.height() - ICON) / 2
         pm = app_pixmap(entry, ICON)
-        painter.drawPixmap(ix, iy, int(pm.width() / max(1, pm.devicePixelRatio())),
-                           int(pm.height() / max(1, pm.devicePixelRatio())), pm)
+        painter.drawPixmap(int(ix), int(iy), ICON, ICON, pm)
 
-        tx = ix + ICON + 13
-        right_reserved = 122
-        avail = max(70, r.right() - right_reserved - tx)
+        tx = ix + ICON + 11
+        right_reserved = 82
+        avail = max(60, int(r.right() - right_reserved - tx))
 
         name_font = QFont(painter.font())
-        name_font.setPointSizeF(10.2)
+        name_font.setPointSizeF(9.9)
         name_font.setWeight(QFont.DemiBold)
         painter.setFont(name_font)
         fm = QFontMetrics(name_font)
         name = fm.elidedText(entry.name or "未知应用", Qt.ElideRight, avail)
-        painter.setPen(QColor("#EDF0F7"))
-        painter.drawText(QRectF(tx, r.top() + 10, avail, 20),
+        painter.setPen(QColor(c["on_accent"] if selected else c["text"]))
+        painter.drawText(QRectF(tx, r.top() + 8, avail, 18),
                          int(Qt.AlignLeft | Qt.AlignVCenter), name)
 
         sub_font = QFont(painter.font())
-        sub_font.setPointSizeF(8.6)
+        sub_font.setPointSizeF(8.3)
         sub_font.setWeight(QFont.Normal)
         painter.setFont(sub_font)
         fm2 = QFontMetrics(sub_font)
@@ -76,38 +74,36 @@ class AppDelegate(QStyledItemDelegate):
             bits.append("v" + entry.version)
         if entry.publisher:
             bits.append(entry.publisher)
-        sub = " · ".join(bits) if bits else "未知发布者"
-        sub = fm2.elidedText(sub, Qt.ElideRight, avail)
-        painter.setPen(QColor("#8A93A8"))
-        painter.drawText(QRectF(tx, r.top() + 31, avail, 17),
+        if not bits:
+            bits.append(_engine_label(entry))
+        sub = fm2.elidedText(" · ".join(bits), Qt.ElideRight, avail)
+        painter.setPen(QColor(255, 255, 255, 200) if selected else QColor(c["text2"]))
+        painter.drawText(QRectF(tx, r.top() + 27, avail, 15),
                          int(Qt.AlignLeft | Qt.AlignVCenter), sub)
 
-        # right column: size badge on top, engine label below
-        bx_right = r.right() - 13
         tag = _badge_text(entry)
         if tag:
-            bw = 14 + fm2.horizontalAdvance(tag)
-            badge = QRectF(bx_right - bw, r.top() + 10, bw, 18)
-            bpath = QPainterPath()
-            bpath.addRoundedRect(badge, 9, 9)
-            painter.fillPath(bpath, QColor(108, 140, 255, 38))
-            painter.setPen(QColor("#9DB0FF"))
-            painter.drawText(badge, int(Qt.AlignCenter), tag)
-
-        engine = {"nsis": "静默卸载", "inno": "静默卸载", "msiexec": "MSI",
-                  "appx": "商店应用", "winget": "winget",
-                  "custom": "交互卸载"}.get(entry.uninstall_type, "")
-        if engine:
             little = QFont(painter.font())
-            little.setPointSizeF(8.0)
+            little.setPointSizeF(8.2)
             painter.setFont(little)
             fml = QFontMetrics(little)
-            w = fml.horizontalAdvance(engine)
-            painter.setPen(QColor("#5E6577"))
-            painter.drawText(QRectF(bx_right - w, r.top() + 32, w, 16),
-                             int(Qt.AlignRight | Qt.AlignVCenter), engine)
+            w = fml.horizontalAdvance(tag)
+            painter.setPen(QColor(255, 255, 255, 220) if selected else QColor(c["text3"]))
+            painter.drawText(QRectF(r.right() - 12 - w, r.top() + 17, w, 16),
+                             int(Qt.AlignRight | Qt.AlignVCenter), tag)
 
+        # hairline separator, inset past the icon like macOS lists
+        if not selected:
+            painter.setPen(QPen(QColor(c["sep"]), 1))
+            y = r.bottom()
+            painter.drawLine(int(tx), int(y), int(r.right() - 10), int(y))
         painter.restore()
+
+
+def _engine_label(entry: AppEntry) -> str:
+    return {"nsis": "静默卸载", "inno": "静默卸载", "msiexec": "MSI",
+            "appx": "商店应用", "winget": "winget",
+            "custom": "交互卸载"}.get(entry.uninstall_type, "应用")
 
 
 def _badge_text(entry: AppEntry) -> str:

@@ -1,37 +1,85 @@
-"""Recovery center: explicit selection, no overwrite, no permanent-delete action."""
+"""Recovery center: explicit selection, no overwrite, no permanent-delete action.
+
+Visual language: Apple system-settings style, driven entirely by ``theme``.
+Behaviour, signals and public attributes are unchanged.
+"""
 from __future__ import annotations
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (QDialog,QHBoxLayout,QLabel,QMessageBox,QPlainTextEdit,
-    QPushButton,QTreeWidget,QTreeWidgetItem,QVBoxLayout)
+from PyQt5.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QMessageBox,
+                             QPlainTextEdit, QPushButton, QTreeWidget,
+                             QTreeWidgetItem, QVBoxLayout)
 from .scanner import human_size
-from .wizard import DIALOG_STYLE, Work
+from .wizard import ShellDialog, Work
 
 
-class RecoveryDialog(QDialog):
+class RecoveryDialog(ShellDialog):
     def __init__(self,parent=None,store=None):
         super().__init__(parent)
         from .recovery import RecoveryStore
         self.store=store
         self._workers=set(); self._busy=False
-        self.setWindowTitle('恢复中心 · 极简卸载'); self.resize(1000,680); self.setMinimumSize(800,540)
-        self.setStyleSheet(DIALOG_STYLE)
-        layout=QVBoxLayout(self); layout.setContentsMargins(24,24,24,20); layout.setSpacing(14)
-        title=QLabel('恢复中心'); title.setObjectName('Heading'); layout.addWidget(title)
-        hint=QLabel('恢复本工具隔离的文件和导出的注册表。不会覆盖原位置已存在的文件；无法撤销厂商卸载器的操作。')
-        hint.setWordWrap(True); hint.setObjectName('Muted'); layout.addWidget(hint)
-        self.tree=QTreeWidget(); self.tree.setHeaderLabels(['应用 / 原位置','类型 / 状态','大小']); self.tree.setColumnWidth(0,650); self.tree.setColumnWidth(1,150)
-        self.tree.setAlternatingRowColors(True); layout.addWidget(self.tree,1)
-        self.log=QPlainTextEdit(); self.log.setReadOnly(True); self.log.setFixedHeight(100); layout.addWidget(self.log)
-        bottom=QHBoxLayout(); self.status=QLabel('正在读取恢复记录…'); bottom.addWidget(self.status,1)
-        self.refresh=QPushButton('刷新'); self.refresh.clicked.connect(self.load); bottom.addWidget(self.refresh)
-        self.restore_btn=QPushButton('还原选中项'); self.restore_btn.setObjectName('Primary'); self.restore_btn.clicked.connect(self.restore_selected); bottom.addWidget(self.restore_btn)
-        self.close_btn=QPushButton('关闭'); self.close_btn.clicked.connect(self.reject); bottom.addWidget(self.close_btn); layout.addLayout(bottom)
-        self.tree.itemChanged.connect(self._selected_changed)
+        self._build()
+        self._restyle()
         try:
             self.store=store or RecoveryStore()
             self.load()
         except Exception as exc:
             self.log.appendPlainText(str(exc)); self.status.setText('恢复区不可用'); self.restore_btn.setEnabled(False)
+
+    def _build(self):
+        layout = self._init_shell('恢复中心', (800, 540), (1000, 680))
+
+        title = QLabel('恢复中心')
+        title.setProperty('role', 'h1')
+        layout.addWidget(title)
+
+        hint = QLabel('恢复本工具隔离的文件和导出的注册表。不会覆盖原位置已存在的文件；无法撤销厂商卸载器的操作。')
+        hint.setWordWrap(True)
+        hint.setProperty('role', 'meta')
+        layout.addWidget(hint)
+
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(['应用 / 原位置', '类型 / 状态', '大小'])
+        self.tree.setAlternatingRowColors(True)
+        header = self.tree.header()
+        header.setStretchLastSection(False)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QHeaderView.Fixed)
+        self.tree.setColumnWidth(1, 132)
+        self.tree.setColumnWidth(2, 92)
+        layout.addWidget(self.tree, 1)
+
+        self.log = QPlainTextEdit()
+        self.log.setObjectName('Log')
+        self.log.setReadOnly(True)
+        self.log.setFixedHeight(96)
+        layout.addWidget(self.log)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(9)
+        self.status = QLabel('正在读取恢复记录…')
+        self.status.setProperty('role', 'faint')
+        bottom.addWidget(self.status, 1)
+
+        self.refresh = QPushButton('刷新')
+        self.refresh.setObjectName('Secondary')
+        self.refresh.clicked.connect(self.load)
+        bottom.addWidget(self.refresh)
+
+        self.restore_btn = QPushButton('还原选中项')
+        self.restore_btn.setObjectName('Primary')
+        self.restore_btn.clicked.connect(self.restore_selected)
+        bottom.addWidget(self.restore_btn)
+
+        self.close_btn = QPushButton('关闭')
+        self.close_btn.setObjectName('Secondary')
+        self.close_btn.clicked.connect(self.reject)
+        bottom.addWidget(self.close_btn)
+        layout.addLayout(bottom)
+
+        self.tree.itemChanged.connect(self._selected_changed)
 
     def _selected_changed(self,*args):
         count=len(self._selected())
@@ -62,7 +110,9 @@ class RecoveryDialog(QDialog):
                     status=item.get('status','未知')
                     labels={'quarantined':'已隔离','quarantined_changed':'内容变化，待核对','verification_pending':'校验未完成，需确认','backed_up':'注册表导出','restored':'已还原','prepared':'待核验','restoring':'恢复中断','failed':'未处理'}
                     row=QTreeWidgetItem([item.get('original_path',''),labels.get(status,status),human_size(item.get('bytes',0))])
-                    group.addChild(row); row.setToolTip(0,item.get('original_path',''))
+                    row.setToolTip(0,item.get('original_path',''))
+                    row.setTextAlignment(2,Qt.AlignRight|Qt.AlignVCenter)
+                    group.addChild(row)
                     if status in ('quarantined','quarantined_changed','backed_up','prepared','restoring','verification_pending'):
                         row.setFlags(row.flags()|Qt.ItemIsUserCheckable); row.setCheckState(0,Qt.Unchecked)
                         row.setData(0,Qt.UserRole,(session_id,item['item_id'],status in ('prepared','verification_pending'))); count+=1

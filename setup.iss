@@ -3,7 +3,7 @@
 
 #define MyAppName "极简卸载"
 #define MyAppNameEn "JiJian Uninstall"
-#define MyAppVersion "1.1.0-preview.1"
+#define MyAppVersion "1.2.0-preview.1"
 #define MyAppPublisher "SvenRogue"
 #define MyAppExeName "极简卸载.exe"
 
@@ -13,7 +13,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 LicenseFile=LICENSE
-VersionInfoVersion=1.1.0.1
+VersionInfoVersion=1.2.0.1
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

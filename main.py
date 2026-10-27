@@ -89,7 +89,21 @@ def main() -> int:
     app.setApplicationDisplayName("极简卸载")
     app.setOrganizationName("SvenRogue")
     app.setStyle("Fusion")
-    app.setStyleSheet(theme.app_qss())
+    # Match the system appearance on first launch; the user can override it in
+    # the sidebar and the choice is remembered.
+    from PyQt5.QtCore import QSettings
+    saved = QSettings("SvenRogue", "JiJianUninstall").value("appearance", "", type=str)
+    if saved in theme.MODES:
+        theme.set_mode(saved)
+    else:
+        try:
+            hints = app.styleHints()
+            dark = getattr(hints, "colorScheme", None)
+            if dark is not None and dark() == Qt.ColorScheme.Dark:
+                theme.set_mode("dark")
+        except Exception:
+            pass
+    theme.apply_palette(app)
 
     icon_path = _resource_base() / "app" / "assets" / "jijian.ico"
     if not icon_path.exists():
