@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QCheckBox, QFr
                              QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from . import chrome, engine as eng, scanner, theme
+from .native_titlebar import apply_titlebar
 from .chrome import Card, LogoWidget, SearchField, SegmentedControl, Spinner
 from .delegate import AppDelegate
 from .icons import app_pixmap
@@ -404,6 +405,10 @@ class MainWindow(QWidget):
     def _toggle_max(self):
         self.showNormal() if self.isMaximized() else self.showMaximized()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        apply_titlebar(self, theme.current_mode() == 'dark')
+
     # ------------------------------------------------------------ appearance
     def _set_appearance(self, mode: str):
         theme.set_mode(mode)
@@ -411,6 +416,9 @@ class MainWindow(QWidget):
         app = QApplication.instance()
         if app:
             theme.apply_palette(app, mode)
+            for window in app.topLevelWidgets():
+                if window.isWindow():
+                    apply_titlebar(window, mode == 'dark')
         self.update()
 
     # ------------------------------------------------------------ admin

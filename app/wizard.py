@@ -16,6 +16,7 @@ from PyQt5.QtWidgets import (QApplication, QComboBox, QDialog, QFileDialog,
                              QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import leftovers, scanner, theme
+from .native_titlebar import apply_titlebar
 from .workflow import UninstallWorkflow
 
 
@@ -135,6 +136,7 @@ QTreeWidget QScrollBar:vertical, QTreeWidget QScrollBar:horizontal { background:
     def showEvent(self, event):
         self._restyle()
         super().showEvent(event)
+        apply_titlebar(self, theme.current_mode() == 'dark')
 
 
 # ------------------------------------------------------------------ wizard

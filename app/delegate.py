@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from . import theme
 from .icons import app_pixmap
+from .drive_label import drive_label
 from .scanner import AppEntry, human_size
 
 ROW_H = 50
@@ -62,12 +63,13 @@ class AppDelegate(QStyledItemDelegate):
         sub_font.setWeight(QFont.Normal)
         painter.setFont(sub_font)
         fm2 = QFontMetrics(sub_font)
-        bits = []
+        # Put location first so it stays visible even for long publisher names.
+        bits = [drive_label(entry)]
         if entry.version:
             bits.append("v" + entry.version)
         if entry.publisher:
             bits.append(entry.publisher)
-        if not bits:
+        if not entry.version and not entry.publisher:
             bits.append(_engine_label(entry))
         tag = _badge_text(entry)
         if tag:
