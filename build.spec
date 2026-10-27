@@ -15,7 +15,7 @@ datas = [
 ]
 
 hiddenimports = collect_submodules("app") + [
-    "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets",
+    "PyQt5.QtCore", "PyQt5.QtGui", "PyQt5.QtWidgets", "PyQt5.QtWinExtras", "win32gui",
     "PIL.Image", "PIL.ImageDraw", "PIL.ImageFilter",
     "win32com", "win32com.shell", "pythoncom",
 ]

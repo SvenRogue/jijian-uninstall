@@ -469,9 +469,12 @@ def scan_arp() -> list[AppEntry]:
                 uid="arp:" + hashlib.sha1(fullkey.encode("utf-8", "ignore")).hexdigest()[:16],
             )
             e._arp_key = key_path          # type: ignore[attr-defined]
-            if e.name.lower() in seen:
+            # Different uninstall registry keys can represent distinct installs
+            # even if their displayed product names are identical.
+            identity = fullkey.casefold()
+            if identity in seen:
                 continue
-            seen.add(e.name.lower())
+            seen.add(identity)
             apps.append(e)
     return apps
 
@@ -483,18 +486,62 @@ def _powershell() -> str:
     return cand if os.path.isfile(cand) else "powershell"
 
 
-_APPX_PS = (
-    "Get-AppxPackage | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable } | "
-    "ForEach-Object { $_.Name + [char]9 + $_.PackageFamilyName + [char]9 + "
-    "$_.Version + [char]9 + $_.PublisherDisplayName + [char]9 + $_.InstallLocation }"
-)
+_APPX_PS = r'''
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class AppxResources {
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+    public static extern int SHLoadIndirectString(string source, StringBuilder output, int size, IntPtr reserved);
+}
+'@ -ErrorAction SilentlyContinue
+function Resolve-AppxResource($value, $fullName) {
+    if (-not $value) { return '' }
+    if ($value -notmatch '^ms-resource:') { return [string]$value }
+    try {
+        $buffer = New-Object System.Text.StringBuilder 4096
+        $source = '@{' + $fullName + '?' + $value + '}'
+        if ([AppxResources]::SHLoadIndirectString($source, $buffer, $buffer.Capacity, [IntPtr]::Zero) -eq 0) {
+            return $buffer.ToString()
+        }
+    } catch {}
+    return ''
+}
+Get-AppxPackage | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable } | ForEach-Object {
+    $pkg = $_
+    $display = ''; $logo = ''
+    try {
+        $manifest = Get-AppxPackageManifest -Package $pkg.PackageFullName -ErrorAction Stop
+        $display = Resolve-AppxResource ([string]$manifest.Package.Properties.DisplayName) $pkg.PackageFullName
+        $asset = Resolve-AppxResource ([string]$manifest.Package.Properties.Logo) $pkg.PackageFullName
+        if ($asset -and $asset -notmatch '^ms-resource:' -and -not [IO.Path]::IsPathRooted($asset)) {
+            $candidate = Join-Path $pkg.InstallLocation $asset
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) { $logo = $candidate }
+            else {
+                $dir = Split-Path -Parent $candidate
+                $stem = [IO.Path]::GetFileNameWithoutExtension($candidate)
+                $ext = [IO.Path]::GetExtension($candidate)
+                $variant = Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name.StartsWith($stem + '.', [StringComparison]::OrdinalIgnoreCase) -and $_.Extension -ieq $ext } |
+                    Sort-Object Name | Select-Object -First 1
+                if ($variant) { $logo = $variant.FullName }
+            }
+        }
+    } catch {}
+    $fields = @($pkg.Name, $pkg.PackageFamilyName, $pkg.Version, $pkg.PublisherDisplayName,
+      $pkg.InstallLocation, $display, $logo) | ForEach-Object { ([string]$_) -replace '[\t\r\n]', ' ' }
+    $fields -join [char]9
+}
+'''
 
 
 def _parse_store_lines(out: str) -> list[AppEntry]:
     apps: list[AppEntry] = []
     for line in out.splitlines():
-        line = line.strip()
-        if not line or line.startswith(("Name", "Get-AppxPackage", "Active code page")):
+        line = line.rstrip('\r\n')
+        if not line.strip() or line.startswith(("Name\t", "Get-AppxPackage", "Active code page")):
             continue
         parts = line.split("\t")
         if len(parts) < 5:
@@ -502,14 +549,19 @@ def _parse_store_lines(out: str) -> list[AppEntry]:
         name, family, version, publisher, loc = parts[:5]
         if not family or _is_junk_pkg(name, family, publisher):
             continue
+        display = parts[5].strip() if len(parts) > 5 else ""
+        if display.lower().startswith("ms-resource:"):
+            display = ""
+        logo = parts[6].strip() if len(parts) > 6 else ""
         e = AppEntry(
-            name=_pretty_pkg_name(name),
+            name=display or name,
             version=str(version),
             publisher=publisher,
             install_location=loc,
             scope="store",
             source="store",
             uninstall_type="appx",
+            display_icon=logo,
             uid="store:" + family,
         )
         e._pkg_family = family        # type: ignore[attr-defined]

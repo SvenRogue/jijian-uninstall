@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (QAction, QActionGroup, QApplication, QCheckBox, QFr
 
 from . import chrome, engine as eng, scanner, theme
 from .native_titlebar import apply_titlebar
+from .locations import resolve_location
 from .chrome import Card, LogoWidget, SearchField, SegmentedControl, Spinner
 from .delegate import AppDelegate
 from .icons import app_pixmap
@@ -289,6 +290,13 @@ class MainWindow(QWidget):
         col.addWidget(self.d_meta)
         head.addLayout(col, 1)
 
+        self.btn_location = QPushButton("打开安装位置")
+        self.btn_location.setObjectName("Secondary")
+        self.btn_location.setCursor(Qt.PointingHandCursor)
+        self.btn_location.setEnabled(False)
+        self.btn_location.clicked.connect(self._open_location)
+        head.addWidget(self.btn_location, 0, Qt.AlignTop)
+
         self.btn_dry = QPushButton("演练")
         self.btn_dry.setObjectName("Secondary")
         self.btn_dry.setCursor(Qt.PointingHandCursor)
@@ -547,12 +555,17 @@ class MainWindow(QWidget):
         self.d_name.setText("选择一个应用")
         self.d_meta.setText("从左侧选择要卸载的应用")
         self.d_icon.clear()
+        self.btn_location.setEnabled(False)
+        self.btn_location.setToolTip('请选择应用')
         self.d_sum.setText("")
         self._clear_lo_rows()
         self.btn_go.setEnabled(False)
         self.btn_dry.setEnabled(False)
 
     def _render_detail(self, e: AppEntry):
+        path, provenance = resolve_location(e)
+        self.btn_location.setEnabled(bool(path) and not self._busy)
+        self.btn_location.setToolTip(f'{provenance}：{path}' if path else provenance)
         self.d_icon.setPixmap(app_pixmap(e, 48))
         self.d_name.setText(e.name)
         meta = []
@@ -682,11 +695,13 @@ class MainWindow(QWidget):
         self._busy = busy
         if status:
             self.lbl_status.setText(status)
-        for w in (self.btn_go, self.btn_dry, self.btn_sort):
+        for w in (self.btn_go, self.btn_dry, self.btn_sort, self.btn_location):
             w.setEnabled(not busy)
         ready = bool(self.current and self.current.uid in self._inventory_ready)
         self.btn_go.setEnabled(not busy and ready)
         self.btn_dry.setEnabled(not busy and ready)
+        path, _ = resolve_location(self.current) if self.current else ('', '')
+        self.btn_location.setEnabled(not busy and bool(path))
         for w in (self.list, self.search, self.cb_reg, self.cb_data, self.cb_link, self.lo_area):
             w.setEnabled(not busy)
         for w in self.pills.values():
@@ -696,6 +711,18 @@ class MainWindow(QWidget):
     def log_line(self, msg: str):
         self.log.appendPlainText(msg)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+
+    def _open_location(self):
+        if not self.current or self._busy:
+            return
+        path, provenance = resolve_location(self.current)
+        if not path:
+            QMessageBox.information(self, '安装位置', provenance)
+            return
+        try:
+            os.startfile(path)
+        except OSError as exc:
+            QMessageBox.warning(self, '无法打开安装位置', str(exc))
 
     def _open_recovery(self):
         if self._busy:

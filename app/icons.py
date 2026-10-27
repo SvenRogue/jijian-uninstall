@@ -1,71 +1,104 @@
-"""AppDelegate 用的图标解析器（与界面分离，便于单测）。"""
+"""Resolve real app icons without accepting directory icons as application icons."""
 from __future__ import annotations
-
+import ctypes
+import ntpath
 import os
+import re
+import sys
 from pathlib import Path
-
 from PyQt5.QtCore import QFileInfo, QSize, Qt
 from PyQt5.QtGui import QIcon, QPainter, QPainterPath, QPixmap
 from PyQt5.QtWidgets import QApplication, QFileIconProvider
-
 from .scanner import AppEntry
+from .drive_label import _expand
 
-_provider: QFileIconProvider | None = None
-_cache: dict[str, QIcon] = {}
+_provider = None
+_cache = {}
 
 
-def _get_provider() -> QFileIconProvider:
+def _get_provider():
     global _provider
     if _provider is None:
         _provider = QFileIconProvider()
     return _provider
 
 
-def icon_candidates(entry: AppEntry) -> list[str]:
-    out: list[str] = []
-    di = (entry.display_icon or "").strip().strip('"')
-    if di:
-        out.append(di.split(",")[0].strip().strip('"'))
-    loc = (entry.install_location or "").strip().strip('"')
-    if not loc:
-        from .scanner import _derive_install_location
-        loc = _derive_install_location(entry) or ""
+def parse_display_icon(value):
+    """Parse a quoted or unquoted icon path and its trailing resource index."""
+    raw = _expand((value or '').strip())
+    match = re.match(r'^\s*"([^"]+)"\s*(?:,\s*(-?\d+)\s*)?$', raw)
+    if match:
+        return match.group(1), int(match.group(2) or 0)
+    match = re.match(r'^(.*?)(?:,\s*(-?\d+))?\s*$', raw)
+    if not match or '"' in raw:
+        return '', 0
+    return match.group(1).strip(), int(match.group(2) or 0)
+
+
+def icon_candidates(entry):
+    out = []
+    icon, index = parse_display_icon(entry.display_icon)
+    if icon and os.path.isfile(icon):
+        out.append((icon, index))
+    logo = getattr(entry, '_logo_path', '')
+    if logo and os.path.isfile(logo):
+        out.append((logo, 0))
+    loc = _expand((entry.install_location or '').strip().strip('"'))
     if loc and os.path.isdir(loc):
         try:
-            base = (entry.name or "").lower().replace(" ", "")
-            exes = sorted(
-                (f for f in os.listdir(loc) if f.lower().endswith(".exe")),
-                key=lambda f: (0 if base and base[:5] in f.lower() else 1, len(f)),
-            )
-            out += [os.path.join(loc, e) for e in exes[:3]]
+            files = [f for f in os.listdir(loc) if f.lower().endswith('.exe')]
+            # Never pick an uninstaller/update/helper as the product icon.
+            files = [f for f in files if not re.search(r'unins|uninstall|setup|update|repair|helper|crash|service',f,re.I)]
+            product = re.sub(r'[^a-z0-9]', '', entry.name.lower())
+            def rank(filename):
+                stem = re.sub(r'[^a-z0-9]', '', Path(filename).stem.lower())
+                return (0 if product and (stem == product or stem in product or product in stem) else 1, len(filename), filename.lower())
+            for f in sorted(files,key=rank)[:8]:
+                out.append((os.path.join(loc,f),0))
         except OSError:
             pass
-    fam = getattr(entry, "_pkg_family", "")
-    if fam:
-        pkg = Path(os.environ.get("LOCALAPPDATA", "")) / "Packages" / fam
-        if pkg.is_dir():
-            out.append(str(pkg))
     return out
 
 
-def app_icon(entry: AppEntry) -> QIcon:
-    if entry.uid in _cache:
-        return _cache[entry.uid]
-    icon = QIcon()
-    for cand in icon_candidates(entry):
+def _resource_icon(path, index):
+    if sys.platform != 'win32' or ntpath.splitext(path)[1].lower() not in ('.exe','.dll','.icl'):
+        return QIcon()
+    try:
+        import win32gui
+        from PyQt5.QtWinExtras import QtWin
+        large, small = win32gui.ExtractIconEx(path, index, 1)
+        handles = large + small
+        if not handles:
+            return QIcon()
         try:
-            if cand and os.path.exists(cand):
-                cand_icon = _get_provider().icon(QFileInfo(cand))
-                if not cand_icon.isNull() and not cand_icon.pixmap(32, 32).isNull():
-                    icon = cand_icon
-                    break
+            pixmap = QtWin.fromHICON(handles[0])
+            return QIcon(pixmap) if not pixmap.isNull() else QIcon()
+        finally:
+            for h in handles:
+                win32gui.DestroyIcon(h)
+    except Exception:
+        return QIcon()
+
+
+def app_icon(entry):
+    candidates = icon_candidates(entry)
+    key = (entry.uid, entry.version, tuple(candidates))
+    if key in _cache:
+        return _cache[key]
+    for path, index in candidates:
+        try:
+            ext = ntpath.splitext(path)[1].lower()
+            icon = _resource_icon(path, index) if ext in ('.exe','.dll','.icl') else QIcon(path)
+            if icon.isNull() and index == 0 and ext == '.exe':
+                icon = _get_provider().icon(QFileInfo(path))
+            if not icon.isNull() and not icon.pixmap(32,32).isNull():
+                _cache[key] = icon
+                return icon
         except Exception:
             continue
-    if icon.isNull():
-        style = QApplication.style()
-        icon = style.standardIcon(style.SP_FileIcon)
-    _cache[entry.uid] = icon
-    return icon
+    # A neutral file glyph is more honest than a folder or another application's icon.
+    style = QApplication.style()
+    return style.standardIcon(style.SP_FileIcon)
 
 
 def rounded_pixmap(icon: QIcon, size: int, radius: int = 9) -> QPixmap:
