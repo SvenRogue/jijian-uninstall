@@ -33,6 +33,9 @@ class Report:
     remaining: list[str] = field(default_factory=list)
     retained: list[str] = field(default_factory=list)
     log_path: str = ''
+    recovery_session: str = ''
+    quarantined_bytes: int = 0
+    phase: str = ''
     @property
     def clean(self):
         return (not self.dry_run and self.official_ok and not self.remaining

@@ -3,7 +3,7 @@
 
 #define MyAppName "极简卸载"
 #define MyAppNameEn "JiJian Uninstall"
-#define MyAppVersion "1.0.1-preview.1"
+#define MyAppVersion "1.1.0-preview.1"
 #define MyAppPublisher "SvenRogue"
 #define MyAppExeName "极简卸载.exe"
 
@@ -13,7 +13,7 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 LicenseFile=LICENSE
-VersionInfoVersion=1.0.1.1
+VersionInfoVersion=1.1.0.1
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -40,12 +40,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "�
 Source: "dist\极简卸载\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "一键彻底卸载本地应用"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "应用卸载与残留审阅"
 Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "一键彻底卸载本地应用"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "应用卸载与残留审阅"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "立即运行 {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
-[UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\JiJianUninstall"
+; Recovery data and logs remain available after uninstall.

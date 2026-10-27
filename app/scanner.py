@@ -80,6 +80,9 @@ class LeftoverItem:
     note: str = ""
     checked: bool = True
     fixed: bool = False   # True when deletion succeeded
+    confidence: str = "需核对"
+    basis: str = "名称和路径仅供人工核对"
+    selectable: bool = True
 
     @property
     def label(self) -> str:

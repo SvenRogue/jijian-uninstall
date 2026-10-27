@@ -354,20 +354,22 @@ class MainWindow(QWidget):
         # options + action
         opt = QHBoxLayout()
         opt.setSpacing(14)
+        notice = QLabel('卸载后重新扫描并选择')
+        notice.setToolTip('此处清点仅供参考；不会直接清理。')
+        opt.addWidget(notice)
         self.cb_reg = QCheckBox("注册表")
         self.cb_data = QCheckBox("数据与缓存")
         self.cb_link = QCheckBox("快捷方式")
-        for cb, val in ((self.cb_reg, True), (self.cb_data, True), (self.cb_link, True)):
-            cb.setChecked(val)
-            cb.setCursor(Qt.PointingHandCursor)
-            opt.addWidget(cb)
+        for cb in (self.cb_reg, self.cb_data, self.cb_link):
+            cb.setChecked(False)
+            cb.hide()
         opt.addStretch(1)
         self.btn_dry = QPushButton("演练")
         self.btn_dry.setObjectName("Ghost")
         self.btn_dry.setToolTip("只显示将要做什么，不做任何修改")
         self.btn_dry.clicked.connect(lambda: self._start_uninstall(dry=True))
         opt.addWidget(self.btn_dry)
-        self.btn_go = QPushButton("卸载并清理")
+        self.btn_go = QPushButton("卸载向导")
         self.btn_go.setObjectName("Primary")
         self.btn_go.setCursor(Qt.PointingHandCursor)
         self.btn_go.clicked.connect(lambda: self._start_uninstall(dry=False))
@@ -420,6 +422,10 @@ class MainWindow(QWidget):
         self.lbl_foot.setProperty("role", "faint")
         lay.addWidget(self.lbl_foot)
         lay.addStretch(1)
+        self.btn_recovery = QPushButton("恢复中心")
+        self.btn_recovery.setObjectName("Pill")
+        self.btn_recovery.clicked.connect(self._open_recovery)
+        lay.addWidget(self.btn_recovery)
         self.btn_open_logs = QPushButton("日志目录")
         self.btn_open_logs.setObjectName("Pill")
         self.btn_open_logs.clicked.connect(self._open_logs)
@@ -632,9 +638,9 @@ class MainWindow(QWidget):
         lay.setContentsMargins(2, 3, 2, 3)
         lay.setSpacing(9)
         cb = QCheckBox()
-        cb.setChecked(item.checked)
-        cb.setCursor(Qt.PointingHandCursor)
-        cb.stateChanged.connect(lambda s, it=item: self._toggle_item(it, s))
+        cb.setChecked(False)
+        cb.setEnabled(False)
+        cb.setToolTip('此处仅作卸载前参考；卸载后在向导中重新扫描并选择。')
         lay.addWidget(cb, 0, Qt.AlignVCenter)
         kind = {"dir": "目录", "appxdata": "应用数据", "key": "注册表",
                 "file": "文件", "service": "服务"}.get(item.kind, item.kind)
@@ -663,33 +669,22 @@ class MainWindow(QWidget):
             return
         e = self.current
         if not dry:
-            ans = QMessageBox(self)
-            ans.setWindowTitle("确认卸载")
-            ans.setIcon(QMessageBox.Warning)
-            ans.setText(f"确定要卸载并清理 <b>{e.name}</b> 吗？")
-            tail = "将执行官方卸载程序，然后删除已勾选的残留位置。此操作不可撤销。"
-            ans.setInformativeText(tail)
-            ans.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
-            ans.setDefaultButton(QMessageBox.Cancel)
-            ans.button(QMessageBox.Yes).setText("开始卸载")
-            ans.button(QMessageBox.Cancel).setText("取消")
-            if ans.exec_() != QMessageBox.Yes:
-                return
+            from .wizard import UninstallWizard
+            dialog = UninstallWizard(e, self)
+            dialog.exec_()
+            if dialog.operation_started:
+                self._inventory_ready.clear()
+                self.start_scan()
+            return
         self.log.clear()
-        self.progress.setValue(0)
-        self._set_busy(True, "演练中…" if dry else "卸载中…")
-        opts = {
-            "dry": dry,
-            "registry": self.cb_reg.isChecked(),
-            "appdata": self.cb_data.isChecked(),
-            "shortcuts": self.cb_link.isChecked(),
-        }
-        self._uninst_worker = UninstallWorker(e, opts)
-        self._uninst_worker.logline.connect(self.log_line)
-        self._uninst_worker.pct.connect(self.progress.setValue)
-        self._uninst_worker.finished_report.connect(self._on_uninstall_done)
-        self._track_worker(self._uninst_worker)
-        self._uninst_worker.start()
+        self.log_line('演练：不会执行卸载或清理。')
+        try:
+            cmd = eng.Uninstaller(lambda _: None)._official_command(e)
+            self.log_line('官方卸载命令：' + subprocess.list2cmdline(cmd))
+        except Exception as exc:
+            self.log_line('当前无法确定官方卸载命令：' + str(exc))
+        self.log_line('官方卸载成功后重新扫描候选；届时须逐项审阅并确认。文件隔离，注册表只备份。')
+        self.lbl_status.setText('演练完成，未执行任何操作')
 
     def _on_uninstall_done(self, rep: eng.Report):
         if self._closing:
@@ -769,6 +764,12 @@ class MainWindow(QWidget):
     def log_line(self, msg: str):
         self.log.appendPlainText(msg)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+
+    def _open_recovery(self):
+        if self._busy:
+            return
+        from .recovery_dialog import RecoveryDialog
+        RecoveryDialog(self).exec_()
 
     def _open_logs(self):
         p = eng.LOG_DIR
